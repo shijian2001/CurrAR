@@ -55,7 +55,6 @@ logger = logging.getLogger(__name__)
 
 
 class LLaVAGRPOTrainer(GRPOTrainer):
-
     def _decode_images(self, completion_ids):
         device = self.accelerator.device
         completion_ids = [torch.tensor(ids, device=device) for ids in completion_ids]
@@ -82,15 +81,10 @@ class LLaVAGRPOTrainer(GRPOTrainer):
         transformed_images = generated_images / 255.0  # B, 3, 224, 224
         transformed_images = (transformed_images - mean[None, :, None, None]) / std[None, :, None, None]
 
-        with torch.inference_mode():
-            image_features = self.clip_model.encode_image(transformed_images)
-            image_features /= image_features.norm(dim=-1, keepdim=True)
-
         # convert to list for broadcast
         transformed_images = [img.cpu() for img in transformed_images]
-        image_features = [feat.cpu() for feat in image_features]
 
-        return transformed_images, image_features
+        return transformed_images
 
     def _generate_and_score_completions(
         self, inputs: dict[str, Union[torch.Tensor, Any]]
@@ -137,12 +131,11 @@ class LLaVAGRPOTrainer(GRPOTrainer):
                     for output in outputs.outputs:
                         completion_ids.append(output.token_ids)
 
-                decoded_images, decoded_image_embeds = self._decode_images(completion_ids)  # List of images [C, H, W]
+                decoded_images = self._decode_images(completion_ids)  # List of images [C, H, W]
 
             else:
                 completion_ids = [None] * len(all_prompts_text)
                 decoded_images = [None] * len(all_prompts_text)
-                decoded_image_embeds = [None] * len(all_prompts_text)
 
             # Broadcast the completions from the main process to all processes, ensuring each process receives its
             # corresponding slice.
@@ -155,14 +148,12 @@ class LLaVAGRPOTrainer(GRPOTrainer):
             decoded_images = broadcast_object_list(decoded_images, from_process=0)
             decoded_images = decoded_images[process_slice]
 
-            decoded_image_embeds = broadcast_object_list(decoded_image_embeds, from_process=0)
-            decoded_image_embeds = decoded_image_embeds[process_slice]
-
             # Pad the completions, and concatenate them with the prompts
             completion_ids = [torch.tensor(ids, device=device) for ids in completion_ids]
             completion_ids = pad(completion_ids, padding_value=self.processing_class.pad_token_id)
             prompt_completion_ids = torch.cat([prompt_ids, completion_ids], dim=1)
         else:
+            raise NotImplemented("not supported yet")
             # Regular generation path
             with unwrap_model_for_generation(self.model, self.accelerator) as unwrapped_model:
                 prompt_completion_ids = unwrapped_model.generate(
@@ -209,22 +200,8 @@ class LLaVAGRPOTrainer(GRPOTrainer):
                     )
 
         completions = []
-        for i, (prompt, image_embed) in enumerate(zip(prompts, decoded_image_embeds)):
-            prompt_clean = prompt.strip("<|t2i|>").strip("<|soi|>")
-            with torch.inference_mode():
-                text = self.clip_tokenizer(prompt_clean.strip()).to(device)
-                text_feature = self.clip_model.encode_text(text)
-                text_feature /= text_feature.norm(dim=-1, keepdim=True)
-
-            image_feature = image_embed.unsqueeze(0).to(device)
-            completions.append(
-                [
-                    {
-                        "image_feature": image_feature,
-                        "text_feature": text_feature,
-                    }
-                ]
-            )
+        for i, (prompt, decoded_image) in enumerate(zip(prompts, decoded_images)):
+            completions.append([{"prompt": prompt, "decoded_image": decoded_image}])
 
         rewards_per_func = torch.zeros(len(prompts), len(self.reward_funcs), device=device)
         for i, (reward_func, reward_processing_class) in enumerate(
@@ -490,7 +467,6 @@ def main(script_args, training_args, model_args):
 
     trainer.clip_preprocess = clip_preprocess
     trainer.clip_tokenizer = clip_tokenizer
-    trainer.clip_model = clip_model
 
     # trainer.aesthetic_model = aest_model
 
