@@ -16,11 +16,12 @@ import logging
 import os
 import sys
 from dataclasses import dataclass, field
-from typing import Any, Union
+from typing import Any, Callable, Union
 
 import datasets
 import torch
 import transformers
+from accelerate import Accelerator
 from accelerate.utils import broadcast_object_list, gather, gather_object, set_seed
 from open_clip import OPENAI_DATASET_MEAN, OPENAI_DATASET_STD
 from transformers import AutoTokenizer
@@ -49,12 +50,28 @@ from simpar.grpo.utils.callbacks import get_callbacks
 from simpar.grpo.utils.wandb_logging import init_wandb_training
 from simpar.model.tokenizer.cosmos_tokenizer.networks import TokenizerConfigs
 from simpar.model.tokenizer.cosmos_tokenizer.video_lib import CausalVideoTokenizer as CosmosTokenizer
+from simpar.train.curriculum import Curriculum
 from simpar.train.t2i_data import GRPOT2IDataset
 
 logger = logging.getLogger(__name__)
 
 
 class LLaVAGRPOTrainer(GRPOTrainer):
+    def __init__(
+        self,
+        curriculum: Curriculum,
+        update_target_difficulty: Callable[[int], None],
+        reward_init_function: Callable[[Accelerator, int], None],
+        *args,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        # TODO: self.config.sample_batch_size
+        reward_init_function(self.accelerator, 1)
+        self.curriculum = curriculum
+        self.update_target_difficulty = update_target_difficulty
+        self.last_difficulty = 0
+
     def _decode_images(self, completion_ids):
         device = self.accelerator.device
         completion_ids = [torch.tensor(ids, device=device) for ids in completion_ids]
@@ -216,6 +233,16 @@ class LLaVAGRPOTrainer(GRPOTrainer):
 
         # Apply weights to each reward function's output and sum
         rewards = (rewards_per_func * self.reward_weights.to(device).unsqueeze(0)).sum(dim=1)
+
+        self.last_difficulty = self.curriculum.infer_target_difficulty(
+            {
+                # TODO: current step
+                "current_step": 1,
+                "difficulty": self.last_difficulty,
+                "reward": rewards.mean().cpu().numpy(),
+            }
+        )
+        self.update_target_difficulty(self.last_difficulty)
 
         # Compute grouped-wise rewards
         mean_grouped_rewards = rewards.view(-1, self.num_generations).mean(dim=1)
