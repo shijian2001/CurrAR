@@ -15,20 +15,15 @@
 import os
 import sys
 import logging
-import wandb
-from typing import Union, Any, Optional
+from typing import Union, Any
 from dataclasses import dataclass, field
-from PIL import Image
 
 import torch
-import torch.nn as nn
 import transformers
 import datasets
-from transformers import set_seed
 from transformers import AutoTokenizer
 from transformers.trainer_utils import get_last_checkpoint
 from accelerate.utils import broadcast_object_list, gather, gather_object, set_seed
-import open_clip
 from hpsv2.src.open_clip import create_model_and_transforms, get_tokenizer
 from open_clip import OPENAI_DATASET_MEAN, OPENAI_DATASET_STD
 
@@ -36,8 +31,8 @@ from trl import GRPOTrainer, ModelConfig, ScriptArguments, TrlParser, get_peft_c
 from trl.trainer.utils import pad
 from trl.models import unwrap_model_for_generation
 
-from simpar.model.multimodal_encoder.cosmos_tokenizer.networks import TokenizerConfigs
-from simpar.model.multimodal_encoder.cosmos_tokenizer.video_lib import CausalVideoTokenizer as CosmosTokenizer
+from simpar.model.tokenizer.cosmos_tokenizer.networks import TokenizerConfigs
+from simpar.model.tokenizer.cosmos_tokenizer.video_lib import CausalVideoTokenizer as CosmosTokenizer
 from simpar.train.t2i_data import GRPOT2IDataset
 from simpar.grpo.configs import GRPOConfig
 from simpar.grpo.utils.callbacks import get_callbacks
@@ -67,24 +62,26 @@ class LLaVAGRPOTrainer(GRPOTrainer):
         device = self.accelerator.device
         completion_ids = [torch.tensor(ids, device=device) for ids in completion_ids]
         completion_ids = torch.stack(completion_ids, dim=0)
-        
+
         codebook_size = 64000
         latent_size = 1024 // 16
         index_samples = completion_ids - len(self.processing_class)
-        index_samples = torch.clamp(index_samples, min=0, max=codebook_size-1)
+        index_samples = torch.clamp(index_samples, min=0, max=codebook_size - 1)
         index_samples = index_samples.reshape(-1, latent_size, latent_size).unsqueeze(1)
 
         with torch.inference_mode():
             generated_images = self.vq_model.decode(index_samples).squeeze(2)
-        
+
         # resize to 224 to save memory
-        generated_images = torch.nn.functional.interpolate(generated_images, size=(224, 224), mode="bilinear", align_corners=False)
+        generated_images = torch.nn.functional.interpolate(
+            generated_images, size=(224, 224), mode="bilinear", align_corners=False
+        )
         generated_images = (255 * (generated_images * 0.5 + 0.5)).clamp(0, 255)
-        
+
         mean = torch.tensor(OPENAI_DATASET_MEAN, device=device)
         std = torch.tensor(OPENAI_DATASET_STD, device=device)
 
-        transformed_images = generated_images / 255.0 # B, 3, 224, 224
+        transformed_images = generated_images / 255.0  # B, 3, 224, 224
         transformed_images = (transformed_images - mean[None, :, None, None]) / std[None, :, None, None]
 
         with torch.inference_mode():
@@ -94,7 +91,7 @@ class LLaVAGRPOTrainer(GRPOTrainer):
         # convert to list for broadcast
         transformed_images = [img.cpu() for img in transformed_images]
         image_features = [feat.cpu() for feat in image_features]
-        
+
         return transformed_images, image_features
 
     def _generate_and_score_completions(
@@ -110,7 +107,7 @@ class LLaVAGRPOTrainer(GRPOTrainer):
         prompt_ids, prompt_mask = prompt_inputs["input_ids"], prompt_inputs["attention_mask"]
         prompt_ids = prompt_ids.to(device)
         prompt_mask = prompt_mask.to(device)
-        
+
         if self.max_prompt_length is not None:
             prompt_ids = prompt_ids[:, -self.max_prompt_length :]
             prompt_mask = prompt_mask[:, -self.max_prompt_length :]
@@ -130,7 +127,9 @@ class LLaVAGRPOTrainer(GRPOTrainer):
                 # prompt individually.
                 ordered_set_of_prompts = list(dict.fromkeys(all_prompts_text))
                 if len(ordered_set_of_prompts) < 7:
-                    ordered_set_of_prompts = ordered_set_of_prompts + ordered_set_of_prompts[:7 - len(ordered_set_of_prompts)]
+                    ordered_set_of_prompts = (
+                        ordered_set_of_prompts + ordered_set_of_prompts[: 7 - len(ordered_set_of_prompts)]
+                    )
 
                 all_outputs = self.llm.generate(
                     ordered_set_of_prompts, sampling_params=self.sampling_params, use_tqdm=False
@@ -139,9 +138,9 @@ class LLaVAGRPOTrainer(GRPOTrainer):
                 for outputs in all_outputs:
                     for output in outputs.outputs:
                         completion_ids.append(output.token_ids)
-                
-                decoded_images, decoded_image_embeds = self._decode_images(completion_ids) # List of images [C, H, W]
-                
+
+                decoded_images, decoded_image_embeds = self._decode_images(completion_ids)  # List of images [C, H, W]
+
             else:
                 completion_ids = [None] * len(all_prompts_text)
                 decoded_images = [None] * len(all_prompts_text)
@@ -221,16 +220,18 @@ class LLaVAGRPOTrainer(GRPOTrainer):
 
             image_feature = image_embed.unsqueeze(0).to(device)
             completions.append(
-                [{
-                    "image_feature": image_feature,
-                    "text_feature": text_feature,
-                }]
+                [
+                    {
+                        "image_feature": image_feature,
+                        "text_feature": text_feature,
+                    }
+                ]
             )
 
         rewards_per_func = torch.zeros(len(prompts), len(self.reward_funcs), device=device)
         for i, (reward_func, reward_processing_class) in enumerate(
             zip(self.reward_funcs, self.reward_processing_classes)
-        ):  
+        ):
             output_reward_func = reward_func(prompts=prompts, completions=completions)
             rewards_per_func[:, i] = torch.tensor(output_reward_func, dtype=torch.float32, device=device)
 
@@ -279,9 +280,6 @@ class LLaVAGRPOTrainer(GRPOTrainer):
             "ref_per_token_logps": ref_per_token_logps,
             "advantages": advantages,
         }
-    
-
-    
 
 
 @dataclass
@@ -353,17 +351,10 @@ class GRPOScriptArguments(ScriptArguments):
         metadata={"help": "Path to the generated data"},
     )
 
-    vq_model_ckpt: str = field(
-        default="/path_to_tokenizer/Cosmos-1.0-Tokenizer-DV8x16x16"
-    )
+    vq_model_ckpt: str = field(default="/path_to_tokenizer/Cosmos-1.0-Tokenizer-DV8x16x16")
 
-    clip_model_ckpt: str = field(
-        default="/path_to_clip/vit_large_patch14_clip_224.openai"
-    )
-    aest_model_ckpt: str = field(
-        default="/path_to_aesthetic/aesthetic-predictor/sa_0_4_vit_l_14_linear.pth"
-    )
-
+    clip_model_ckpt: str = field(default="/path_to_clip/vit_large_patch14_clip_224.openai")
+    aest_model_ckpt: str = field(default="/path_to_aesthetic/aesthetic-predictor/sa_0_4_vit_l_14_linear.pth")
 
 
 def main(script_args, training_args, model_args):
@@ -412,15 +403,19 @@ def main(script_args, training_args, model_args):
     # Load VQ model
     tokenizer_config = TokenizerConfigs["DV"].value
     tokenizer_config.update(dict(spatial_compression=16, temporal_compression=8))
-    vq_model = CosmosTokenizer(checkpoint_enc=f"{script_args.vq_model_ckpt}/encoder.jit", checkpoint_dec=f"{script_args.vq_model_ckpt}/decoder.jit", tokenizer_config=tokenizer_config)
+    vq_model = CosmosTokenizer(
+        checkpoint_enc=f"{script_args.vq_model_ckpt}/encoder.jit",
+        checkpoint_dec=f"{script_args.vq_model_ckpt}/decoder.jit",
+        tokenizer_config=tokenizer_config,
+    )
     vq_model.eval()
     vq_model.requires_grad_(False)
 
     # Load reward model
     clip_model, _, clip_preprocess = create_model_and_transforms(
-        'ViT-H-14',
-        f'{script_args.clip_model_ckpt}/open_clip_pytorch_model.bin',
-        precision='amp',
+        "ViT-H-14",
+        f"{script_args.clip_model_ckpt}/open_clip_pytorch_model.bin",
+        precision="amp",
         device="cuda",
         jit=False,
         force_quick_gelu=False,
@@ -434,9 +429,9 @@ def main(script_args, training_args, model_args):
         aug_cfg={},
         output_dict=True,
         with_score_predictor=False,
-        with_region_predictor=False
+        with_region_predictor=False,
     )
-    clip_tokenizer = get_tokenizer('ViT-H-14')
+    clip_tokenizer = get_tokenizer("ViT-H-14")
     clip_model = clip_model.to("cuda")
     clip_model.eval()
 
@@ -465,7 +460,7 @@ def main(script_args, training_args, model_args):
         "tag_count": tag_count_reward,
         "clip": clip_reward,
         "aesthetic": aesthetic_reward,
-        "hps": hps_reward
+        "hps": hps_reward,
     }
     reward_funcs = [REWARD_FUNCS_REGISTRY[func] for func in script_args.reward_funcs]
 
@@ -498,7 +493,7 @@ def main(script_args, training_args, model_args):
     trainer.clip_preprocess = clip_preprocess
     trainer.clip_tokenizer = clip_tokenizer
     trainer.clip_model = clip_model
-    
+
     # trainer.aesthetic_model = aest_model
 
     ###############

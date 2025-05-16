@@ -10,20 +10,19 @@ name = "simpar"
 version = "1.7.0.dev0"
 description = "SimpAR: Pushing the Frontier of Autoregressive Visual Generation through Pretraining, SFT, and RL"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: Apache Software License",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 standalone = [
     "shortuuid",
     "httpx==0.24.0",
     "einops",
     "ftfy",
 ]
-
 
 train = [
     "simpar[standalone]",
