@@ -12,46 +12,44 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import os
 import sys
-import logging
-from typing import Union, Any
 from dataclasses import dataclass, field
+from typing import Any, Union
 
+import datasets
 import torch
 import transformers
-import datasets
+from accelerate.utils import broadcast_object_list, gather, gather_object, set_seed
+from open_clip import OPENAI_DATASET_MEAN, OPENAI_DATASET_STD
 from transformers import AutoTokenizer
 from transformers.trainer_utils import get_last_checkpoint
-from accelerate.utils import broadcast_object_list, gather, gather_object, set_seed
-from hpsv2.src.open_clip import create_model_and_transforms, get_tokenizer
-from open_clip import OPENAI_DATASET_MEAN, OPENAI_DATASET_STD
-
 from trl import GRPOTrainer, ModelConfig, ScriptArguments, TrlParser, get_peft_config
-from trl.trainer.utils import pad
 from trl.models import unwrap_model_for_generation
+from trl.trainer.utils import pad
 
-from simpar.model.tokenizer.cosmos_tokenizer.networks import TokenizerConfigs
-from simpar.model.tokenizer.cosmos_tokenizer.video_lib import CausalVideoTokenizer as CosmosTokenizer
-from simpar.train.t2i_data import GRPOT2IDataset
+from hpsv2.src.open_clip import create_model_and_transforms, get_tokenizer
 from simpar.grpo.configs import GRPOConfig
-from simpar.grpo.utils.callbacks import get_callbacks
-from simpar.grpo.utils.wandb_logging import init_wandb_training
 from simpar.grpo.rewards import (
     accuracy_reward,
+    aesthetic_reward,
+    clip_reward,
     code_reward,
     format_reward,
     get_code_format_reward,
     get_cosine_scaled_reward,
     get_repetition_penalty_reward,
+    hps_reward,
     len_reward,
     reasoning_steps_reward,
     tag_count_reward,
-    clip_reward,
-    aesthetic_reward,
-    hps_reward,
 )
-
+from simpar.grpo.utils.callbacks import get_callbacks
+from simpar.grpo.utils.wandb_logging import init_wandb_training
+from simpar.model.tokenizer.cosmos_tokenizer.networks import TokenizerConfigs
+from simpar.model.tokenizer.cosmos_tokenizer.video_lib import CausalVideoTokenizer as CosmosTokenizer
+from simpar.train.t2i_data import GRPOT2IDataset
 
 logger = logging.getLogger(__name__)
 
