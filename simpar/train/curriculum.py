@@ -69,6 +69,7 @@ class CurriculumPromptLoader:
         self.sample_num_batches_per_epoch = 0
         self.t: tqdm.tqdm | None = None
         self.difficulty_range: tuple[int, int] | None = None
+        self.data_num = 0
 
     def get_sample_num_batches_per_epoch(self) -> int:
         return self.sample_num_batches_per_epoch
@@ -86,6 +87,7 @@ class CurriculumPromptLoader:
             self.difficulty_to_prompts[self._extract_difficulty(difficulty_str)] = prompts
             self.difficulty_to_prompts_idx[self._extract_difficulty(difficulty_str)] = self.accelerator.process_index
         self.t = tqdm.tqdm(total=total, desc="dataloader")
+        self.data_num = total
         self.sample_num_batches_per_epoch = total // (self.accelerator.num_processes * batch_size)
         self.difficulty_range = (min(self.difficulty_to_prompts), max(self.difficulty_to_prompts))
 

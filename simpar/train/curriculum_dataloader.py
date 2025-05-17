@@ -56,6 +56,9 @@ class CurriculumDataLoader:
             collate_fn=self._collate_fn,
         )
 
+    def __len__(self) -> int:
+        return self.prompt_loader.data_num
+
     def _collate_fn(self, examples):
         """将多个样本组合成一个批次"""
         batch = {}
@@ -79,4 +82,3 @@ class CurriculumDataLoader:
     def get_sample_num_batches_per_epoch(self) -> int:
         """获取每个epoch的批次数"""
         return self.prompt_loader.get_sample_num_batches_per_epoch()
-
