@@ -29,9 +29,7 @@ class GRPOConfig(trl.GRPOConfig):
     benchmarks: list[str] = field(
         default_factory=lambda: [], metadata={"help": "The benchmarks to run after training."}
     )
-    callbacks: list[str] = field(
-        default_factory=lambda: [], metadata={"help": "The callbacks to run during training."}
-    )
+    callbacks: list[str] = field(default_factory=lambda: [], metadata={"help": "The callbacks to run during training."})
     chat_template: Optional[str] = field(default=None, metadata={"help": "The chat template to use."})
     system_prompt: Optional[str] = field(
         default=None,
@@ -50,6 +48,15 @@ class GRPOConfig(trl.GRPOConfig):
         default=None,
         metadata={"help": ("The project to store runs under.")},
     )
+    prompt_path: str = field(default="", metadata={"help": "The path to the prompt."})
+
+
+@dataclass
+class CurriculumConfig:
+    eta: float = field(default=50, metadata={"help": "The eta for the curriculum."})
+    beta: float = field(default=0.5, metadata={"help": "The beta for the curriculum."})
+    alpha: float = field(default=2, metadata={"help": "The alpha for the curriculum."})
+    strategy: str = field(default="reward", metadata={"help": "The strategy for the curriculum."})
 
 
 @dataclass
@@ -61,9 +68,7 @@ class SFTConfig(trl.SFTConfig):
     benchmarks: list[str] = field(
         default_factory=lambda: [], metadata={"help": "The benchmarks to run after training."}
     )
-    callbacks: list[str] = field(
-        default_factory=lambda: [], metadata={"help": "The callbacks to run during training."}
-    )
+    callbacks: list[str] = field(default_factory=lambda: [], metadata={"help": "The callbacks to run during training."})
     chat_template: Optional[str] = field(default=None, metadata={"help": "The chat template to use."})
     system_prompt: Optional[str] = field(
         default=None,

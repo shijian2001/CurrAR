@@ -73,7 +73,7 @@ class CurriculumPromptLoader:
     def get_sample_num_batches_per_epoch(self) -> int:
         return self.sample_num_batches_per_epoch
 
-    def difficulty_range_getter(self) -> tuple[int, int]:
+    def get_difficulty_range(self) -> tuple[int, int]:
         assert self.difficulty_range, "need init"
         return self.difficulty_range
 

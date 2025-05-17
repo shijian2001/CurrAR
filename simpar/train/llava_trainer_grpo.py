@@ -31,7 +31,7 @@ from trl.models import unwrap_model_for_generation
 from trl.trainer.utils import pad
 
 from hpsv2.src.open_clip import create_model_and_transforms, get_tokenizer
-from simpar.grpo.configs import GRPOConfig
+from simpar.grpo.configs import CurriculumConfig, GRPOConfig
 from simpar.grpo.rewards import (
     accuracy_reward,
     aesthetic_reward,
@@ -50,7 +50,8 @@ from simpar.grpo.utils.callbacks import get_callbacks
 from simpar.grpo.utils.wandb_logging import init_wandb_training
 from simpar.model.tokenizer.cosmos_tokenizer.networks import TokenizerConfigs
 from simpar.model.tokenizer.cosmos_tokenizer.video_lib import CausalVideoTokenizer as CosmosTokenizer
-from simpar.train.curriculum import Curriculum
+from simpar.train.curriculum import Curriculum, CurriculumPromptLoader
+from simpar.train.scorer import VQAScorer
 from simpar.train.t2i_data import GRPOT2IDataset
 
 logger = logging.getLogger(__name__)
@@ -66,8 +67,7 @@ class LLaVAGRPOTrainer(GRPOTrainer):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        # TODO: self.config.sample_batch_size
-        reward_init_function(self.accelerator, 1)
+        reward_init_function(self.accelerator, self.args.per_device_train_batch_size)
         self.curriculum = curriculum
         self.update_target_difficulty = update_target_difficulty
         self.last_difficulty = 0
@@ -236,8 +236,7 @@ class LLaVAGRPOTrainer(GRPOTrainer):
 
         self.last_difficulty = self.curriculum.infer_target_difficulty(
             {
-                # TODO: current step
-                "current_step": 1,
+                "current_step": self.state.global_step,
                 "difficulty": self.last_difficulty,
                 "reward": rewards.mean().cpu().numpy(),
             }
@@ -359,7 +358,12 @@ class GRPOScriptArguments(ScriptArguments):
     aest_model_ckpt: str = field(default="/path_to_aesthetic/aesthetic-predictor/sa_0_4_vit_l_14_linear.pth")
 
 
-def main(script_args, training_args, model_args):
+def main(
+    script_args: GRPOScriptArguments,
+    training_args: GRPOConfig,
+    model_args: ModelConfig,
+    curriculum_args: CurriculumConfig,
+):
     # Set seed for reproducibility
     set_seed(training_args.seed)
 
@@ -440,6 +444,7 @@ def main(script_args, training_args, model_args):
     # Load the dataset
     dataset = GRPOT2IDataset(data_path=script_args.data_path, tokenizer=tokenizer)
 
+    scorer_ = VQAScorer()
     # Get reward functions
     REWARD_FUNCS_REGISTRY = {
         "accuracy": accuracy_reward,
@@ -463,6 +468,7 @@ def main(script_args, training_args, model_args):
         "clip": clip_reward,
         "aesthetic": aesthetic_reward,
         "hps": hps_reward,
+        "vqa": scorer_.calc_score,
     }
     reward_funcs = [REWARD_FUNCS_REGISTRY[func] for func in script_args.reward_funcs]
 
@@ -477,10 +483,23 @@ def main(script_args, training_args, model_args):
     )
     training_args.model_init_kwargs = model_kwargs
 
+    prompt_loader = CurriculumPromptLoader(prompt_path=training_args.prompt_path)
+    curriculum = Curriculum(
+        difficulty_range_getter=prompt_loader.get_difficulty_range,
+        eta=curriculum_args.eta,
+        beta=curriculum_args.beta,
+        alpha=curriculum_args.alpha,
+        strategy=curriculum_args.strategy,
+        sample_num_batches_per_epoch_getter=prompt_loader.get_sample_num_batches_per_epoch,
+    )
+
     #############################
     # Initialize the GRPO trainer
     #############################
     trainer = LLaVAGRPOTrainer(
+        curriculum=curriculum,
+        update_target_difficulty=prompt_loader.set_difficulty,
+        reward_init_function=prompt_loader.init,
         model=model_args.model_name_or_path,
         reward_funcs=reward_funcs,
         args=training_args,
@@ -533,6 +552,7 @@ def main(script_args, training_args, model_args):
 
 
 if __name__ == "__main__":
-    parser = TrlParser((GRPOScriptArguments, GRPOConfig, ModelConfig))
-    script_args, training_args, model_args = parser.parse_args_and_config()
-    main(script_args, training_args, model_args)
+    parser = TrlParser((GRPOScriptArguments, GRPOConfig, ModelConfig, CurriculumConfig))
+    script_args, training_args, model_args, curriculum_args = parser.parse_args_and_config()
+    assert training_args.prompt_path, "require prompt_path"
+    main(script_args, training_args, model_args, curriculum_args)
