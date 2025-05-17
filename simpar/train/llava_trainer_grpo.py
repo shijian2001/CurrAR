@@ -51,20 +51,22 @@ class LLaVAGRPOTrainer(GRPOTrainer):
         *args,
         **kwargs,
     ):
-        # 删除kwargs中的train_dataset参数，传入get_dataloader获取的dataloader
-        if "train_dataset" in kwargs:
-            kwargs["train_dataset"] = data_loader.get_dataloader()
+        # 避免长度检查问题，创建一个特殊的数据集类，确保不会调用len()
+        class InfiniteDataset:
+            def __iter__(self):
+                return iter([None] * 1000000)  # 返回一个非常大的迭代器
 
-        # 初始化父类
+            def __len__(self):
+                return 1000000  # 返回一个足够大的值
+
+        # 初始化父类时使用InfiniteDataset
+        kwargs["train_dataset"] = InfiniteDataset()
         super().__init__(*args, **kwargs)
 
-        self.train_dataset = data_loader
+        # 保存data_loader，但不作为train_dataset
+        self.data_loader = data_loader
         # 初始化data_loader
         data_loader.init(self.accelerator, self.args.per_device_train_batch_size)
-        # 覆盖train_dataset为data_loader获取的dataloader
-
-        # 初始化其他参数
-        self.train_dataset.init(self.accelerator, self.args.per_device_train_batch_size)
         self.curriculum = curriculum
         self.last_difficulty = 0
         self.vqa_pipeline = pipeline(
@@ -106,6 +108,10 @@ class LLaVAGRPOTrainer(GRPOTrainer):
         transformed_images = [img.cpu() for img in transformed_images]
 
         return transformed_images
+
+    def get_train_dataloader(self):
+        """覆盖原方法，使用我们的data_loader替代标准数据加载器"""
+        return self.data_loader.get_dataloader()
 
     def _generate_and_score_completions(
         self, inputs: dict[str, Union[torch.Tensor, Any]]
@@ -242,7 +248,7 @@ class LLaVAGRPOTrainer(GRPOTrainer):
                 "reward": rewards.mean().cpu().numpy(),
             }
         )
-        self.train_dataset.set_difficulty(self.last_difficulty)
+        self.data_loader.set_difficulty(self.last_difficulty)
 
         # Compute grouped-wise rewards
         mean_grouped_rewards = rewards.view(-1, self.num_generations).mean(dim=1)
