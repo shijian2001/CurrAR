@@ -16,12 +16,11 @@ import logging
 import os
 import sys
 from dataclasses import dataclass, field
-from typing import Any, Callable, Union
+from typing import Any, Union
 
 import datasets
 import torch
 import transformers
-from accelerate import Accelerator
 from accelerate.utils import broadcast_object_list, gather, gather_object, set_seed
 from open_clip import OPENAI_DATASET_MEAN, OPENAI_DATASET_STD
 from transformers import AutoTokenizer
@@ -29,32 +28,16 @@ from transformers.pipelines import pipeline
 from transformers.trainer_utils import get_last_checkpoint
 from trl import GRPOTrainer, ModelConfig, ScriptArguments, TrlParser, get_peft_config
 from trl.models import unwrap_model_for_generation
-from trl.trainer import grpo_config
 from trl.trainer.utils import pad
 
-from hpsv2.src.open_clip import create_model_and_transforms, get_tokenizer
 from simpar.grpo.configs import CurriculumConfig, GRPOConfig
-from simpar.grpo.rewards import (
-    accuracy_reward,
-    aesthetic_reward,
-    clip_reward,
-    code_reward,
-    format_reward,
-    get_code_format_reward,
-    get_cosine_scaled_reward,
-    get_repetition_penalty_reward,
-    hps_reward,
-    len_reward,
-    reasoning_steps_reward,
-    tag_count_reward,
-)
 from simpar.grpo.utils.callbacks import get_callbacks
 from simpar.grpo.utils.wandb_logging import init_wandb_training
 from simpar.model.tokenizer.cosmos_tokenizer.networks import TokenizerConfigs
 from simpar.model.tokenizer.cosmos_tokenizer.video_lib import CausalVideoTokenizer as CosmosTokenizer
-from simpar.train.curriculum import Curriculum, CurriculumPromptLoader
+from simpar.train.curriculum import Curriculum
+from simpar.train.curriculum_dataloader import CurriculumDataLoader
 from simpar.train.scorer import VQAScorer
-from simpar.train.t2i_data import GRPOT2IDataset
 
 logger = logging.getLogger(__name__)
 
@@ -63,23 +46,33 @@ class LLaVAGRPOTrainer(GRPOTrainer):
     def __init__(
         self,
         curriculum: Curriculum,
-        update_target_difficulty: Callable[[int], None],
-        reward_init_function: Callable[[Accelerator, int], None],
         vqa_model_name: str,
+        data_loader: CurriculumDataLoader,
         *args,
         **kwargs,
     ):
+        # 删除kwargs中的train_dataset参数，传入get_dataloader获取的dataloader
+        self.train_dataset = data_loader
+        if "train_dataset" in kwargs:
+            kwargs["train_dataset"] = self.train_dataset.get_dataloader()
+
+        # 初始化父类
         super().__init__(*args, **kwargs)
-        reward_init_function(self.accelerator, self.args.per_device_train_batch_size)
+
+        # 初始化data_loader
+        data_loader.init(self.accelerator, self.args.per_device_train_batch_size)
+        # 覆盖train_dataset为data_loader获取的dataloader
+
+        # 初始化其他参数
+        self.train_dataset.init(self.accelerator, self.args.per_device_train_batch_size)
         self.curriculum = curriculum
-        self.update_target_difficulty = update_target_difficulty
         self.last_difficulty = 0
         self.vqa_pipeline = pipeline(
             "image-text-to-text",
             model=vqa_model_name,
             device_map="auto",
             torch_dtype=torch.bfloat16,
-            batch_size=config.train_batch_size,
+            batch_size=self.args.per_device_train_batch_size,
         )
 
         self.vqa_pipeline.model.eval()
@@ -250,7 +243,7 @@ class LLaVAGRPOTrainer(GRPOTrainer):
                 "reward": rewards.mean().cpu().numpy(),
             }
         )
-        self.update_target_difficulty(self.last_difficulty)
+        self.train_dataset.set_difficulty(self.last_difficulty)
 
         # Compute grouped-wise rewards
         mean_grouped_rewards = rewards.view(-1, self.num_generations).mean(dim=1)
@@ -356,11 +349,6 @@ class GRPOScriptArguments(ScriptArguments):
         },
     )
 
-    data_path: str = field(
-        default="",
-        metadata={"help": "Path to the generated data"},
-    )
-
     vq_model_ckpt: str = field(default="/path_to_tokenizer/Cosmos-1.0-Tokenizer-DV8x16x16")
 
 
@@ -423,8 +411,8 @@ def main(
     vq_model.eval()
     vq_model.requires_grad_(False)
 
-    # Load the dataset
-    dataset = GRPOT2IDataset(data_path=script_args.data_path, tokenizer=tokenizer)
+    # Load the dataset using CurriculumDataLoader
+    data_loader = CurriculumDataLoader(prompt_path=training_args.prompt_path)
 
     # Get reward functions
     scorer_ = VQAScorer()
@@ -445,14 +433,13 @@ def main(
     )
     training_args.model_init_kwargs = model_kwargs
 
-    prompt_loader = CurriculumPromptLoader(prompt_path=training_args.prompt_path)
     curriculum = Curriculum(
-        difficulty_range_getter=prompt_loader.get_difficulty_range,
+        difficulty_range_getter=data_loader.get_difficulty_range,
         eta=curriculum_args.eta,
         beta=curriculum_args.c_beta,
         alpha=curriculum_args.alpha,
         strategy=curriculum_args.strategy,
-        sample_num_batches_per_epoch_getter=prompt_loader.get_sample_num_batches_per_epoch,
+        sample_num_batches_per_epoch_getter=data_loader.get_sample_num_batches_per_epoch,
     )
 
     #############################
@@ -461,12 +448,10 @@ def main(
     trainer = LLaVAGRPOTrainer(
         vqa_model_name=training_args.vqa_model_name,
         curriculum=curriculum,
-        update_target_difficulty=prompt_loader.set_difficulty,
-        reward_init_function=prompt_loader.init,
         model=model_args.model_name_or_path,
         reward_funcs=reward_funcs,
         args=training_args,
-        train_dataset=dataset,
+        data_loader=data_loader,
         eval_dataset=None,
         peft_config=get_peft_config(model_args),
         callbacks=get_callbacks(training_args, model_args),
@@ -490,7 +475,7 @@ def main(
         checkpoint = last_checkpoint
     train_result = trainer.train(resume_from_checkpoint=checkpoint)
     metrics = train_result.metrics
-    metrics["train_samples"] = len(dataset[script_args.dataset_train_split])
+    # 注意这里不再需要dataset[script_args.dataset_train_split]
     trainer.log_metrics("train", metrics)
     trainer.save_metrics("train", metrics)
     trainer.save_state()
