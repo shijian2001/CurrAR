@@ -16,11 +16,12 @@ import logging
 import os
 import sys
 from dataclasses import dataclass, field
-from typing import Any, Union
+from typing import Any, Callable, Union
 
 import datasets
 import torch
 import transformers
+from accelerate import Accelerator
 from accelerate.utils import broadcast_object_list, gather, gather_object, set_seed
 from open_clip import OPENAI_DATASET_MEAN, OPENAI_DATASET_STD
 from transformers import AutoTokenizer
@@ -49,8 +50,7 @@ from simpar.grpo.utils.callbacks import get_callbacks
 from simpar.grpo.utils.wandb_logging import init_wandb_training
 from simpar.model.tokenizer.cosmos_tokenizer.networks import TokenizerConfigs
 from simpar.model.tokenizer.cosmos_tokenizer.video_lib import CausalVideoTokenizer as CosmosTokenizer
-from simpar.train.curriculum import Curriculum
-from simpar.train.curriculum_dataloader import CurriculumDataLoader
+from simpar.train.curriculum import Curriculum, CurriculumPromptLoader
 from simpar.train.scorer import VQAScorer
 from simpar.train.t2i_data import GRPOT2IDataset
 
@@ -61,14 +61,15 @@ class LLaVAGRPOTrainer(GRPOTrainer):
     def __init__(
         self,
         curriculum: Curriculum,
-        curriculum_dataloader: CurriculumDataLoader,
+        update_target_difficulty: Callable[[int], None],
+        reward_init_function: Callable[[Accelerator, int], None],
         *args,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        reward_init_function(self.accelerator, self.args.per_device_train_batch_size)
         self.curriculum = curriculum
-        self.curriculum_dataloader = curriculum_dataloader
-        self.curriculum_dataloader.init(self.accelerator, self.args.per_device_train_batch_size)
+        self.update_target_difficulty = update_target_difficulty
         self.last_difficulty = 0
 
     def _decode_images(self, completion_ids):
@@ -240,7 +241,7 @@ class LLaVAGRPOTrainer(GRPOTrainer):
                 "reward": rewards.mean().cpu().numpy(),
             }
         )
-        self.curriculum_dataloader.set_difficulty(self.last_difficulty)
+        self.update_target_difficulty(self.last_difficulty)
 
         # Compute grouped-wise rewards
         mean_grouped_rewards = rewards.view(-1, self.num_generations).mean(dim=1)
@@ -416,57 +417,13 @@ def main(
     vq_model.eval()
     vq_model.requires_grad_(False)
 
-    # Load reward model
-    clip_model, _, clip_preprocess = create_model_and_transforms(
-        "ViT-H-14",
-        f"{script_args.clip_model_ckpt}/open_clip_pytorch_model.bin",
-        precision="amp",
-        device="cuda",
-        jit=False,
-        force_quick_gelu=False,
-        force_custom_text=False,
-        force_patch_dropout=False,
-        force_image_size=None,
-        pretrained_image=False,
-        image_mean=None,
-        image_std=None,
-        light_augmentation=True,
-        aug_cfg={},
-        output_dict=True,
-        with_score_predictor=False,
-        with_region_predictor=False,
-    )
-    clip_tokenizer = get_tokenizer("ViT-H-14")
-    clip_model = clip_model.to("cuda")
-    clip_model.eval()
-
     # Load the dataset
     dataset = GRPOT2IDataset(data_path=script_args.data_path, tokenizer=tokenizer)
 
-    scorer_ = VQAScorer()
     # Get reward functions
+    scorer_ = VQAScorer()
+
     REWARD_FUNCS_REGISTRY = {
-        "accuracy": accuracy_reward,
-        "format": format_reward,
-        "reasoning_steps": reasoning_steps_reward,
-        "cosine": get_cosine_scaled_reward(
-            min_value_wrong=script_args.cosine_min_value_wrong,
-            max_value_wrong=script_args.cosine_max_value_wrong,
-            min_value_correct=script_args.cosine_min_value_correct,
-            max_value_correct=script_args.cosine_max_value_correct,
-            max_len=script_args.cosine_max_len,
-        ),
-        "repetition_penalty": get_repetition_penalty_reward(
-            ngram_size=script_args.repetition_n_grams,
-            max_penalty=script_args.repetition_max_penalty,
-        ),
-        "length": len_reward,
-        "code": code_reward,
-        "code_format": get_code_format_reward(language=script_args.code_language),
-        "tag_count": tag_count_reward,
-        "clip": clip_reward,
-        "aesthetic": aesthetic_reward,
-        "hps": hps_reward,
         "vqa": scorer_.calc_score,
     }
     reward_funcs = [REWARD_FUNCS_REGISTRY[func] for func in script_args.reward_funcs]
@@ -482,17 +439,14 @@ def main(
     )
     training_args.model_init_kwargs = model_kwargs
 
-    # 创建curriculum dataloader
-    curriculum_dataloader = CurriculumDataLoader(prompt_path=training_args.prompt_path)
-
-    # 创建curriculum
+    prompt_loader = CurriculumPromptLoader(prompt_path=training_args.prompt_path)
     curriculum = Curriculum(
-        difficulty_range_getter=curriculum_dataloader.get_difficulty_range,
+        difficulty_range_getter=prompt_loader.get_difficulty_range,
         eta=curriculum_args.eta,
-        beta=curriculum_args.beta,
+        beta=curriculum_args.c_beta,
         alpha=curriculum_args.alpha,
         strategy=curriculum_args.strategy,
-        sample_num_batches_per_epoch_getter=curriculum_dataloader.get_sample_num_batches_per_epoch,
+        sample_num_batches_per_epoch_getter=prompt_loader.get_sample_num_batches_per_epoch,
     )
 
     #############################
@@ -500,10 +454,13 @@ def main(
     #############################
     trainer = LLaVAGRPOTrainer(
         curriculum=curriculum,
-        curriculum_dataloader=curriculum_dataloader,
+        update_target_difficulty=prompt_loader.set_difficulty,
+        reward_init_function=prompt_loader.init,
         model=model_args.model_name_or_path,
         reward_funcs=reward_funcs,
         args=training_args,
+        train_dataset=dataset,
+        eval_dataset=None,
         peft_config=get_peft_config(model_args),
         callbacks=get_callbacks(training_args, model_args),
         processing_class=tokenizer,
@@ -526,6 +483,7 @@ def main(
         checkpoint = last_checkpoint
     train_result = trainer.train(resume_from_checkpoint=checkpoint)
     metrics = train_result.metrics
+    metrics["train_samples"] = len(dataset[script_args.dataset_train_split])
     trainer.log_metrics("train", metrics)
     trainer.save_metrics("train", metrics)
     trainer.save_state()
@@ -539,7 +497,6 @@ def main(
 
     # Save everything else on main process
     kwargs = {
-        "dataset_name": script_args.dataset_name,
         "tags": ["open-r1"],
     }
     if trainer.accelerator.is_main_process:
