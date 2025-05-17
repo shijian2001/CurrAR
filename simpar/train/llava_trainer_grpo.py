@@ -70,7 +70,6 @@ class LLaVAGRPOTrainer(GRPOTrainer):
         self.vqa_pipeline = pipeline(
             "image-text-to-text",
             model=vqa_model_name,
-            device_map="auto",
             torch_dtype=torch.bfloat16,
             batch_size=self.args.per_device_train_batch_size,
         )
