@@ -458,9 +458,6 @@ def main(
     )
     trainer.vq_model = vq_model
 
-    trainer.clip_preprocess = clip_preprocess
-    trainer.clip_tokenizer = clip_tokenizer
-
     # trainer.aesthetic_model = aest_model
 
     ###############
