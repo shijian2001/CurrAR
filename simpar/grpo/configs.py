@@ -49,6 +49,7 @@ class GRPOConfig(trl.GRPOConfig):
         metadata={"help": ("The project to store runs under.")},
     )
     prompt_path: str = field(default="", metadata={"help": "The path to the prompt."})
+    vqa_model_name: str = field(default="llava-hf/llava-1.5-7b-hf", metadata={"help": "the pretrained model to use"})
 
 
 @dataclass

@@ -25,9 +25,11 @@ from accelerate import Accelerator
 from accelerate.utils import broadcast_object_list, gather, gather_object, set_seed
 from open_clip import OPENAI_DATASET_MEAN, OPENAI_DATASET_STD
 from transformers import AutoTokenizer
+from transformers.pipelines import pipeline
 from transformers.trainer_utils import get_last_checkpoint
 from trl import GRPOTrainer, ModelConfig, ScriptArguments, TrlParser, get_peft_config
 from trl.models import unwrap_model_for_generation
+from trl.trainer import grpo_config
 from trl.trainer.utils import pad
 
 from hpsv2.src.open_clip import create_model_and_transforms, get_tokenizer
@@ -63,6 +65,7 @@ class LLaVAGRPOTrainer(GRPOTrainer):
         curriculum: Curriculum,
         update_target_difficulty: Callable[[int], None],
         reward_init_function: Callable[[Accelerator, int], None],
+        vqa_model_name: str,
         *args,
         **kwargs,
     ):
@@ -71,6 +74,15 @@ class LLaVAGRPOTrainer(GRPOTrainer):
         self.curriculum = curriculum
         self.update_target_difficulty = update_target_difficulty
         self.last_difficulty = 0
+        self.vqa_pipeline = pipeline(
+            "image-text-to-text",
+            model=vqa_model_name,
+            device_map="auto",
+            torch_dtype=torch.bfloat16,
+            batch_size=config.train_batch_size,
+        )
+
+        self.vqa_pipeline.model.eval()
 
     def _decode_images(self, completion_ids):
         device = self.accelerator.device
@@ -108,6 +120,7 @@ class LLaVAGRPOTrainer(GRPOTrainer):
     ) -> dict[str, Union[torch.Tensor, Any]]:
         device = self.accelerator.device
         prompts = [x["prompt"] for x in inputs]
+        metadata = [x["metadata"] for x in inputs]
         prompts_text = [p for p in prompts]
         prompt_inputs = self.processing_class(
             prompts_text, return_tensors="pt", padding=True, padding_side="left", add_special_tokens=False
@@ -216,15 +229,11 @@ class LLaVAGRPOTrainer(GRPOTrainer):
                         self.model, prompt_completion_ids, attention_mask, logits_to_keep
                     )
 
-        completions = []
-        for i, (prompt, decoded_image) in enumerate(zip(prompts, decoded_images)):
-            completions.append([{"prompt": prompt, "decoded_image": decoded_image}])
-
         rewards_per_func = torch.zeros(len(prompts), len(self.reward_funcs), device=device)
         for i, (reward_func, reward_processing_class) in enumerate(
             zip(self.reward_funcs, self.reward_processing_classes)
         ):
-            output_reward_func = reward_func(prompts=prompts, completions=completions)
+            output_reward_func = reward_func(vqa_pipeline=self.vqa_pipeline, images=decoded_images, prompts=prompts)
             rewards_per_func[:, i] = torch.tensor(output_reward_func, dtype=torch.float32, device=device)
 
         # Gather the reward per function: this part is crucial, because the rewards are normalized per group and the
@@ -453,6 +462,7 @@ def main(
     # Initialize the GRPO trainer
     #############################
     trainer = LLaVAGRPOTrainer(
+        vqa_model_name=training_args.vqa_model_name,
         curriculum=curriculum,
         update_target_difficulty=prompt_loader.set_difficulty,
         reward_init_function=prompt_loader.init,
