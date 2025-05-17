@@ -363,9 +363,6 @@ class GRPOScriptArguments(ScriptArguments):
 
     vq_model_ckpt: str = field(default="/path_to_tokenizer/Cosmos-1.0-Tokenizer-DV8x16x16")
 
-    clip_model_ckpt: str = field(default="/path_to_clip/vit_large_patch14_clip_224.openai")
-    aest_model_ckpt: str = field(default="/path_to_aesthetic/aesthetic-predictor/sa_0_4_vit_l_14_linear.pth")
-
 
 def main(
     script_args: GRPOScriptArguments,
