@@ -16,12 +16,11 @@ import logging
 import os
 import sys
 from dataclasses import dataclass, field
-from typing import Any, Callable, Union
+from typing import Any, Union
 
 import datasets
 import torch
 import transformers
-from accelerate import Accelerator
 from accelerate.utils import broadcast_object_list, gather, gather_object, set_seed
 from open_clip import OPENAI_DATASET_MEAN, OPENAI_DATASET_STD
 from transformers import AutoTokenizer
@@ -50,7 +49,8 @@ from simpar.grpo.utils.callbacks import get_callbacks
 from simpar.grpo.utils.wandb_logging import init_wandb_training
 from simpar.model.tokenizer.cosmos_tokenizer.networks import TokenizerConfigs
 from simpar.model.tokenizer.cosmos_tokenizer.video_lib import CausalVideoTokenizer as CosmosTokenizer
-from simpar.train.curriculum import Curriculum, CurriculumPromptLoader
+from simpar.train.curriculum import Curriculum
+from simpar.train.curriculum_dataloader import CurriculumDataLoader
 from simpar.train.scorer import VQAScorer
 from simpar.train.t2i_data import GRPOT2IDataset
 
@@ -61,15 +61,14 @@ class LLaVAGRPOTrainer(GRPOTrainer):
     def __init__(
         self,
         curriculum: Curriculum,
-        update_target_difficulty: Callable[[int], None],
-        reward_init_function: Callable[[Accelerator, int], None],
+        curriculum_dataloader: CurriculumDataLoader,
         *args,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        reward_init_function(self.accelerator, self.args.per_device_train_batch_size)
         self.curriculum = curriculum
-        self.update_target_difficulty = update_target_difficulty
+        self.curriculum_dataloader = curriculum_dataloader
+        self.curriculum_dataloader.init(self.accelerator, self.args.per_device_train_batch_size)
         self.last_difficulty = 0
 
     def _decode_images(self, completion_ids):
@@ -241,7 +240,7 @@ class LLaVAGRPOTrainer(GRPOTrainer):
                 "reward": rewards.mean().cpu().numpy(),
             }
         )
-        self.update_target_difficulty(self.last_difficulty)
+        self.curriculum_dataloader.set_difficulty(self.last_difficulty)
 
         # Compute grouped-wise rewards
         mean_grouped_rewards = rewards.view(-1, self.num_generations).mean(dim=1)
@@ -483,14 +482,17 @@ def main(
     )
     training_args.model_init_kwargs = model_kwargs
 
-    prompt_loader = CurriculumPromptLoader(prompt_path=training_args.prompt_path)
+    # 创建curriculum dataloader
+    curriculum_dataloader = CurriculumDataLoader(prompt_path=training_args.prompt_path)
+
+    # 创建curriculum
     curriculum = Curriculum(
-        difficulty_range_getter=prompt_loader.get_difficulty_range,
+        difficulty_range_getter=curriculum_dataloader.get_difficulty_range,
         eta=curriculum_args.eta,
         beta=curriculum_args.beta,
         alpha=curriculum_args.alpha,
         strategy=curriculum_args.strategy,
-        sample_num_batches_per_epoch_getter=prompt_loader.get_sample_num_batches_per_epoch,
+        sample_num_batches_per_epoch_getter=curriculum_dataloader.get_sample_num_batches_per_epoch,
     )
 
     #############################
@@ -498,13 +500,10 @@ def main(
     #############################
     trainer = LLaVAGRPOTrainer(
         curriculum=curriculum,
-        update_target_difficulty=prompt_loader.set_difficulty,
-        reward_init_function=prompt_loader.init,
+        curriculum_dataloader=curriculum_dataloader,
         model=model_args.model_name_or_path,
         reward_funcs=reward_funcs,
         args=training_args,
-        train_dataset=dataset,
-        eval_dataset=None,
         peft_config=get_peft_config(model_args),
         callbacks=get_callbacks(training_args, model_args),
         processing_class=tokenizer,
@@ -527,7 +526,6 @@ def main(
         checkpoint = last_checkpoint
     train_result = trainer.train(resume_from_checkpoint=checkpoint)
     metrics = train_result.metrics
-    metrics["train_samples"] = len(dataset[script_args.dataset_train_split])
     trainer.log_metrics("train", metrics)
     trainer.save_metrics("train", metrics)
     trainer.save_state()
