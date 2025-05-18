@@ -1,7 +1,9 @@
 import logging
 from typing import Any, Dict, Iterator
 
+import torch
 from accelerate import Accelerator
+from t2i_data import preprocess_t2i
 from torch.utils.data import DataLoader, IterableDataset
 
 from simpar.train.curriculum import CurriculumPromptLoader
@@ -30,7 +32,10 @@ class CurriculumIterableDataset(IterableDataset):
         assert self.accelerator is not None, "Dataset not initialized. Call init() first."
         while True:
             prompt, data = self.prompt_loader.next()
-            yield {"prompt": prompt, "metadata": data}
+            # sources = [[{"from": "human", "value": "<image>"}, {"from": "gpt", "value": item["caption"]}]]
+            # t2i_data_dict = preprocess_t2i(sources, self.tokenizer, vtokens_shape=0, p_drop_cond=0.0)
+            # prompt_token_ids = t2i_data_dict["input_ids"][0][0].tolist()
+            yield {"prompt": f"<|t2i|>{prompt}<|soi|>", "prompt_token_ids": torch.tensor([0]), "metadata": data}
 
 
 class CurriculumDataLoader:
