@@ -53,18 +53,19 @@ class LLaVAGRPOTrainer(GRPOTrainer):
     ):
         # 删除kwargs中的train_dataset参数，传入get_dataloader获取的dataloader
         if "train_dataset" in kwargs:
-            kwargs["train_dataset"] = data_loader.get_dataset()
+            kwargs["train_dataset"] = data_loader.get_dataloader()
 
         # 初始化父类
         super().__init__(*args, **kwargs)
 
-        self.train_dataset = data_loader
+        self.train_dataset = data_loader.get_dataloader()
+        self.prompt_dataloader = data_loader
         # 初始化data_loader
         data_loader.init(self.accelerator, self.args.per_device_train_batch_size)
         # 覆盖train_dataset为data_loader获取的dataloader
 
         # 初始化其他参数
-        self.train_dataset.init(self.accelerator, self.args.per_device_train_batch_size)
+        self.prompt_dataloader.init(self.accelerator, self.args.per_device_train_batch_size)
         self.curriculum = curriculum
         self.last_difficulty = 0
         self.vqa_pipeline = pipeline(
@@ -242,7 +243,7 @@ class LLaVAGRPOTrainer(GRPOTrainer):
                 "reward": rewards.mean().cpu().numpy(),
             }
         )
-        self.train_dataset.set_difficulty(self.last_difficulty)
+        self.prompt_dataloader.set_difficulty(self.last_difficulty)
 
         # Compute grouped-wise rewards
         mean_grouped_rewards = rewards.view(-1, self.num_generations).mean(dim=1)
