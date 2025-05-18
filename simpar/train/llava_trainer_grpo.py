@@ -455,7 +455,6 @@ def main(
         peft_config=get_peft_config(model_args),
         callbacks=get_callbacks(training_args, model_args),
         processing_class=tokenizer,
-        accelerator_config=dict(dispatch_batches=False),
     )
     trainer.vq_model = vq_model
 
