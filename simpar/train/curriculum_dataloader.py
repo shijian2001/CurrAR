@@ -3,7 +3,6 @@ from typing import Any, Dict, Iterator
 
 import torch
 from accelerate import Accelerator
-from t2i_data import preprocess_t2i
 from torch.utils.data import DataLoader, IterableDataset
 
 from simpar.train.curriculum import CurriculumPromptLoader
