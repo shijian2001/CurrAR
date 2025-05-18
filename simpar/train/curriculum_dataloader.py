@@ -56,9 +56,6 @@ class CurriculumDataLoader:
             collate_fn=self._collate_fn,
         )
 
-    def __len__(self) -> int:
-        return self.prompt_loader.data_num
-
     def _collate_fn(self, examples):
         """将多个样本组合成一个批次"""
         batch = {}
