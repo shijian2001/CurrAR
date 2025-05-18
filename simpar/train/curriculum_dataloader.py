@@ -71,6 +71,9 @@ class CurriculumDataLoader:
         assert self.dataloader is not None, "DataLoader not initialized. Call init() first."
         return self.dataloader
 
+    def get_dataset(self) -> IterableDataset:
+        return self.dataset
+
     def set_difficulty(self, difficulty: int) -> None:
         """设置当前难度"""
         self.prompt_loader.set_difficulty(difficulty)

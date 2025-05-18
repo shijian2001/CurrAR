@@ -53,7 +53,7 @@ class LLaVAGRPOTrainer(GRPOTrainer):
     ):
         # 删除kwargs中的train_dataset参数，传入get_dataloader获取的dataloader
         if "train_dataset" in kwargs:
-            kwargs["train_dataset"] = data_loader.get_dataloader()
+            kwargs["train_dataset"] = data_loader.get_dataset()
 
         # 初始化父类
         super().__init__(*args, **kwargs)
