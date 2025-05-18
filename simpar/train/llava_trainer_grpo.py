@@ -65,7 +65,6 @@ class LLaVAGRPOTrainer(GRPOTrainer):
         # 覆盖train_dataset为data_loader获取的dataloader
 
         # 初始化其他参数
-        self.prompt_dataloader.init(self.accelerator, self.args.per_device_train_batch_size)
         self.curriculum = curriculum
         self.last_difficulty = 0
         self.vqa_pipeline = pipeline(
