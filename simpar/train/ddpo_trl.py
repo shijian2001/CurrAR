@@ -15,7 +15,6 @@ from simpar.grpo.configs import CurriculumConfig
 from simpar.model.tokenizer.cosmos_tokenizer.networks import TokenizerConfigs
 from simpar.train.curriculum import Curriculum
 from simpar.train.curriculum_dataloader import CurriculumDataLoader
-from simpar.train.ordered_dataloader import CurriculumPromptLoader
 from simpar.train.scorer import VQAScorer
 
 logger = logging.getLogger(__name__)
@@ -155,6 +154,7 @@ def main(
         sample_num_batches_per_epoch_getter=data_loader.get_sample_num_batches_per_epoch,
     )
 
+    # TODO: use dataloader itself
     curriculum_manager = CurriculumManager(curriculum, data_loader)
 
     # 创建VQA管道
@@ -179,8 +179,6 @@ def main(
         script_args.pretrained_model,
     )
 
-    prompt_loader = CurriculumPromptLoader(prompt_path=script_args.prompt_path)
-
     # 初始化DDPO训练器
     trainer = StatedTrainer(
         curriculum_manager=curriculum_manager,
@@ -188,7 +186,7 @@ def main(
         sd_pipeline=sd_pipeline,
         reward_function=reward_function,
         state=state,
-        prompt_function=prompt_loader.next,
+        prompt_function=curriculum_manager.data_loader.prompt_loader.next,
     )
 
     # 初始化data_loader
