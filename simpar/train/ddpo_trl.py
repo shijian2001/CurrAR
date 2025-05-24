@@ -42,7 +42,7 @@ def create_vqa_reward_function(vqa_pipeline, curriculum_manager, state):
 
     scorer = VQAScorer()
 
-    def reward_function(samples, prompts, **kwargs):
+    def reward_function(samples, prompts, metadata):
         """
         计算生成样本的奖励
 
@@ -55,7 +55,7 @@ def create_vqa_reward_function(vqa_pipeline, curriculum_manager, state):
         """
 
         # 使用VQA模型评估图像质量
-        rewards, _ = scorer.calc_score(vqa_pipeline, samples, prompts, metadata=kwargs)
+        rewards, _ = scorer.calc_score(vqa_pipeline, samples, prompts, metadata=metadata)
 
         # 更新课程学习难度
         avg_reward = rewards.mean()
