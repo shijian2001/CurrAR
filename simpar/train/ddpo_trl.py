@@ -76,7 +76,7 @@ class DDPOScriptArguments:
     DDPO脚本参数
     """
 
-    prompt_path: str
+    prompt_filename: str
     pretrained_model: str = field(default="runwayml/stable-diffusion-v1-5")
     pretrained_revision: str = field(default="main")
     vq_model_name: str = field(default="llava-hf/llava-1.5-7b-hf", metadata={"help": "VQ模型检查点路径"})
@@ -139,7 +139,7 @@ def main(
     vq_model.model.eval()
 
     # 使用CurriculumDataLoader加载数据集
-    data_loader = CurriculumDataLoader(prompt_path=script_args.prompt_path)
+    data_loader = CurriculumDataLoader(prompt_path=script_args.prompt_filename)
 
     # 设置模型参数
     logger.info("*** 初始化模型参数 ***")
