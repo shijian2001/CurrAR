@@ -8,9 +8,6 @@ from typing import Optional
 
 import torch
 from accelerate.utils import set_seed
-from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion import (
-    StableDiffusionPipeline,
-)
 from transformers.pipelines import pipeline
 from trl import DDPOConfig, DDPOTrainer, DefaultDDPOStableDiffusionPipeline, ModelConfig, TrlParser
 
@@ -84,8 +81,6 @@ class DDPOScriptArguments:
     pretrained_model: str = field(default="runwayml/stable-diffusion-v1-5")
     pretrained_revision: str = field(default="main")
     vq_model_name: str = field(default="llava-hf/llava-1.5-7b-hf", metadata={"help": "VQ模型检查点路径"})
-    samples_per_prompt: int = field(default=4, metadata={"help": "每个提示生成的样本数"})
-    kl_coef: float = field(default=0.1, metadata={"help": "KL散度的系数"})
 
 
 # 创建trainer state对象来跟踪全局步骤
