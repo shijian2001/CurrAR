@@ -179,6 +179,13 @@ def main(
         script_args.pretrained_model,
     )
 
+    training_args.project_kwargs = {
+        "logging_dir": "./logs",
+        "automatic_checkpoint_naming": True,
+        # "total_limit": 5,
+        "project_dir": "./save",
+    }
+
     # 初始化DDPO训练器
     trainer = StatedTrainer(
         curriculum_manager=curriculum_manager,
