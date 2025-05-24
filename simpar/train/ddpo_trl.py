@@ -55,7 +55,7 @@ def create_vqa_reward_function(vqa_pipeline, curriculum_manager, state):
         """
 
         # 使用VQA模型评估图像质量
-        rewards, _ = scorer.calc_score(vqa_pipeline, samples, prompts, metadata=metadata)
+        rewards, meta = scorer.calc_score(vqa_pipeline, samples, prompts, metadata=metadata)
 
         # 更新课程学习难度
         avg_reward = rewards.mean()
@@ -65,7 +65,7 @@ def create_vqa_reward_function(vqa_pipeline, curriculum_manager, state):
         # 记录指标
         logger.info(f"Step {current_step}, Average Reward: {avg_reward:.4f}, Difficulty: {difficulty}")
 
-        return rewards
+        return rewards, meta
 
     return reward_function
 
