@@ -12,7 +12,7 @@ from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion import (
     StableDiffusionPipeline,
 )
 from transformers.pipelines import pipeline
-from trl import DDPOConfig, DDPOTrainer, ModelConfig, TrlParser
+from trl import DDPOConfig, DDPOTrainer, DefaultDDPOStableDiffusionPipeline, ModelConfig, TrlParser
 
 from simpar.grpo.configs import CurriculumConfig
 from simpar.model.tokenizer.cosmos_tokenizer.networks import TokenizerConfigs
@@ -177,8 +177,8 @@ def main(
         curriculum_manager=curriculum_manager,
         state=state,
     )
-    sd_pipeline = StableDiffusionPipeline.from_pretrained(
-        script_args.pretrained_model, revision=script_args.pretrained_revision, use_fast=True
+    sd_pipeline = DefaultDDPOStableDiffusionPipeline(
+        script_args.pretrained_model,
     )
 
     prompt_loader = CurriculumPromptLoader(prompt_path=script_args.prompt_path)
