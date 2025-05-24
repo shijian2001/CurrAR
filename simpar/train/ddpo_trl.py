@@ -204,5 +204,6 @@ def main(
 
 if __name__ == "__main__":
     parser = TrlParser((DDPOScriptArguments, DDPOConfig, ModelConfig, CurriculumConfig))
-    script_args, training_args, model_args, curriculum_args = parser.parse_args_and_config()
+    assert sys.argv[-1].endswith("yml") or sys.argv[-1].endswith("yaml")
+    script_args, training_args, model_args, curriculum_args = parser.parse_yaml_file(sys.argv[-1])
     main(script_args, training_args, model_args, curriculum_args)
