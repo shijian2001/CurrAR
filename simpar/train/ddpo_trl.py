@@ -161,6 +161,7 @@ def main(
         model=script_args.vq_model_name,
         torch_dtype=torch.bfloat16,
         batch_size=training_args.sample_batch_size,
+        device_map="auto",
     )
     vqa_pipeline.model.eval()
 
