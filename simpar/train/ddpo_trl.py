@@ -11,7 +11,6 @@ from accelerate.utils import set_seed
 from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion import (
     StableDiffusionPipeline,
 )
-from transformers import AutoTokenizer
 from transformers.pipelines import pipeline
 from trl import DDPOConfig, DDPOTrainer, ModelConfig, TrlParser
 
@@ -42,7 +41,7 @@ class CurriculumManager:
         return self.last_difficulty
 
 
-def create_vqa_reward_function(vqa_pipeline, curriculum_manager, vq_model, tokenizer, state):
+def create_vqa_reward_function(vqa_pipeline, curriculum_manager, state):
     """创建VQA奖励函数"""
 
     scorer = VQAScorer()
@@ -130,11 +129,6 @@ def main(
         handlers=[logging.StreamHandler(sys.stdout)],
     )
 
-    ################
-    # 加载分词器
-    ################
-    tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, use_fast=False)
-
     # 加载VQ模型
     tokenizer_config = TokenizerConfigs["DV"].value
     tokenizer_config.update(dict(spatial_compression=16, temporal_compression=8))
@@ -181,8 +175,6 @@ def main(
     reward_function = create_vqa_reward_function(
         vqa_pipeline=vqa_pipeline,
         curriculum_manager=curriculum_manager,
-        vq_model=vq_model,
-        tokenizer=tokenizer,
         state=state,
     )
     sd_pipeline = StableDiffusionPipeline.from_pretrained(

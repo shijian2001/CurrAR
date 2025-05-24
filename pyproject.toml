@@ -14,7 +14,7 @@ classifiers = [
 ]
 dependencies = [
     "diffusers==0.33.1",
-    "peft>=0.4.0",
+    "peft>=0.15.2",
 ]
 
 [dependency-groups]
@@ -44,7 +44,6 @@ train = [
     "uvicorn",
     "wandb",
     "deepspeed==0.14.4",
-    "peft==0.4.0",
     "accelerate>=0.29.1",
     "bitsandbytes==0.41.0",
     "sentencepiece~=0.1.99",

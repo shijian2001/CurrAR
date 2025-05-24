@@ -1736,21 +1736,23 @@ wheels = [
 
 [[package]]
 name = "peft"
-version = "0.4.0"
+version = "0.15.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "accelerate" },
+    { name = "huggingface-hub" },
     { name = "numpy" },
     { name = "packaging" },
     { name = "psutil" },
     { name = "pyyaml" },
     { name = "safetensors" },
     { name = "torch" },
+    { name = "tqdm" },
     { name = "transformers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/26/54/dbdad73535c0421cc93ab10ff73f20919b90a4030c2daf53c83795e74896/peft-0.4.0.tar.gz", hash = "sha256:e768fa22d6e9f32aa7e891f0d06f355960278ca4dc0cdd96bff71f6f06269207", size = 82009, upload-time = "2023-07-17T10:45:08.456Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/33/65/faa18cd8ffbe0f742c3f2559770646cce2574b9cd28a2a05e8d36f64e968/peft-0.15.2.tar.gz", hash = "sha256:7059029f4d42a092ded1aa117dd366a46084aef638bdd593f6ab0195d5427fcd", size = 472952, upload-time = "2025-04-15T15:27:53.09Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/88/a0/6e1c23293a922a9c9e9bd8d56a60cd78ecf531fdabe45ac975e142bfbe86/peft-0.4.0-py3-none-any.whl", hash = "sha256:2cf992772a6d703814477e0bdcdadd68cb8ea388111ce2d793dd2ff0e438f357", size = 72901, upload-time = "2023-07-17T10:44:48.476Z" },
+    { url = "https://files.pythonhosted.org/packages/68/85/8e6ea3d1089f2b6de3c1cd34bbbd7560912af9d34b057be3b8b8fefe1da3/peft-0.15.2-py3-none-any.whl", hash = "sha256:0dfc942b03b7af4b7267cd4e30b15e3a4a1d277adc581ce6245fc13f1f93d0a0", size = 411051, upload-time = "2025-04-15T15:27:50.799Z" },
 ]
 
 [[package]]
@@ -2605,7 +2607,6 @@ train = [
     { name = "numpy" },
     { name = "open-clip-torch" },
     { name = "opencv-python" },
-    { name = "peft" },
     { name = "pydantic" },
     { name = "pytorch-lightning" },
     { name = "requests" },
@@ -2627,7 +2628,7 @@ train = [
 [package.metadata]
 requires-dist = [
     { name = "diffusers", specifier = "==0.33.1" },
-    { name = "peft", specifier = ">=0.4.0" },
+    { name = "peft", specifier = ">=0.15.2" },
 ]
 
 [package.metadata.requires-dev]
@@ -2664,7 +2665,6 @@ train = [
     { name = "numpy", specifier = "==1.26.1" },
     { name = "open-clip-torch" },
     { name = "opencv-python" },
-    { name = "peft", specifier = "==0.4.0" },
     { name = "pydantic", specifier = "==1.10.8" },
     { name = "pytorch-lightning" },
     { name = "requests" },
