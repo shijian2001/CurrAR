@@ -12,6 +12,10 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: Apache Software License",
 ]
+dependencies = [
+    "diffusers==0.33.1",
+    "peft>=0.4.0",
+]
 
 [dependency-groups]
 dev = [
