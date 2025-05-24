@@ -12,7 +12,6 @@ from transformers.pipelines import pipeline
 from trl import DDPOConfig, DDPOTrainer, DefaultDDPOStableDiffusionPipeline, ModelConfig, TrlParser
 
 from simpar.grpo.configs import CurriculumConfig
-from simpar.model.tokenizer.cosmos_tokenizer.networks import TokenizerConfigs
 from simpar.train.curriculum import Curriculum
 from simpar.train.curriculum_dataloader import CurriculumDataLoader
 from simpar.train.scorer import VQAScorer
@@ -78,8 +77,7 @@ class DDPOScriptArguments:
 
     prompt_filename: str
     pretrained_model: str = field(default="runwayml/stable-diffusion-v1-5")
-    pretrained_revision: str = field(default="main")
-    vq_model_name: str = field(default="llava-hf/llava-1.5-7b-hf", metadata={"help": "VQ模型检查点路径"})
+    vqa_model: str = field(default="llava-hf/llava-1.5-7b-hf", metadata={"help": "模型检查点路径"})
 
 
 # 创建trainer state对象来跟踪全局步骤
@@ -125,19 +123,6 @@ def main(
         handlers=[logging.StreamHandler(sys.stdout)],
     )
 
-    # 加载VQ模型
-    tokenizer_config = TokenizerConfigs["DV"].value
-    tokenizer_config.update(dict(spatial_compression=16, temporal_compression=8))
-    vq_model = pipeline(
-        "image-text-to-text",
-        model=script_args.vq_model_name,
-        device_map="auto",
-        torch_dtype=torch.bfloat16,
-        batch_size=training_args.train_batch_size,
-    )
-
-    vq_model.model.eval()
-
     # 使用CurriculumDataLoader加载数据集
     data_loader = CurriculumDataLoader(prompt_path=script_args.prompt_filename)
 
@@ -150,7 +135,7 @@ def main(
         eta=curriculum_args.eta,
         beta=curriculum_args.c_beta,
         alpha=curriculum_args.alpha,
-        strategy=curriculum_args.strategy,
+        strategy=curriculum_args.curriculum_strategy,
         sample_num_batches_per_epoch_getter=data_loader.get_sample_num_batches_per_epoch,
     )
 
@@ -160,7 +145,7 @@ def main(
     # 创建VQA管道
     vqa_pipeline = pipeline(
         "image-text-to-text",
-        model=script_args.vq_model_name,
+        model=script_args.vqa_model,
         torch_dtype=torch.bfloat16,
         batch_size=training_args.sample_batch_size,
         device_map="auto",

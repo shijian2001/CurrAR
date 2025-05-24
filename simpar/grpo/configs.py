@@ -57,7 +57,7 @@ class CurriculumConfig:
     eta: float = field(default=50, metadata={"help": "The eta for the curriculum."})
     c_beta: float = field(default=0.5, metadata={"help": "The beta for the curriculum."})
     alpha: float = field(default=2, metadata={"help": "The alpha for the curriculum."})
-    strategy: str = field(default="reward", metadata={"help": "The strategy for the curriculum."})
+    curriculum_strategy: str = field(default="reward", metadata={"help": "The strategy for the curriculum."})
 
 
 @dataclass
