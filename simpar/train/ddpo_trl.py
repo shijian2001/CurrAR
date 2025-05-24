@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 class CurriculumManager:
     """课程学习管理器，用于动态调整数据难度"""
 
-    def __init__(self, curriculum, data_loader):
+    def __init__(self, curriculum: Curriculum, data_loader: CurriculumDataLoader):
         self.curriculum = curriculum
         self.data_loader = data_loader
         self.last_difficulty = 0
@@ -90,9 +90,11 @@ class TrainerState:
 
 
 class StatedTrainer(DDPOTrainer):
-    def __init__(self, state: TrainerState, *args, **kwargs):
+    def __init__(self, state: TrainerState, curriculum_manager: CurriculumManager, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.state = state
+        self.curriculum_manager = curriculum_manager
+        curriculum_manager.data_loader.init(self.accelerator, kwargs["config"].train_batch_size)
 
     def train(self, epochs: Optional[int] = None):
         """
@@ -181,6 +183,7 @@ def main(
 
     # 初始化DDPO训练器
     trainer = StatedTrainer(
+        curriculum_manager=curriculum_manager,
         config=training_args,
         sd_pipeline=sd_pipeline,
         reward_function=reward_function,
