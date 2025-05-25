@@ -112,15 +112,6 @@ def main(
     # 设置随机种子以确保可重复性
     set_seed(training_args.seed)
 
-    ###############
-    # 设置日志
-    ###############
-    logging.basicConfig(
-        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[logging.StreamHandler(sys.stdout)],
-    )
-
     # 使用CurriculumDataLoader加载数据集
     data_loader = CurriculumDataLoader(prompt_path=script_args.prompt_filename)
 
