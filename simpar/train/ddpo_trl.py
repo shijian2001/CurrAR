@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import logging
 import sys
 from dataclasses import dataclass, field
 from typing import Optional
 
 import torch
 from accelerate.utils import set_seed
+from loguru import logger
 from transformers.pipelines import pipeline
 from trl import DDPOConfig, DDPOTrainer, DefaultDDPOStableDiffusionPipeline, ModelConfig, TrlParser
 
@@ -15,8 +15,6 @@ from simpar.grpo.configs import CurriculumConfig
 from simpar.train.curriculum import Curriculum
 from simpar.train.curriculum_dataloader import CurriculumDataLoader
 from simpar.train.scorer import VQAScorer
-
-logger = logging.getLogger(__name__)
 
 
 class CurriculumManager:
