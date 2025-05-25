@@ -1,12 +1,10 @@
 import json
-import logging
 from pathlib import Path
 from typing import Any
 
 import accelerate
 import tqdm
-
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class CurriculumPromptLoader:

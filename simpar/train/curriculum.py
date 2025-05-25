@@ -1,5 +1,4 @@
 import json
-import logging
 import random
 from pathlib import Path
 from typing import Any, Callable
@@ -7,8 +6,7 @@ from typing import Any, Callable
 import accelerate
 import numpy as np
 import tqdm
-
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class Curriculum:

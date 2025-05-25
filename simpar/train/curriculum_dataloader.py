@@ -1,13 +1,11 @@
-import logging
 from typing import Any, Dict, Iterator
 
 import torch
 from accelerate import Accelerator
+from loguru import logger
 from torch.utils.data import DataLoader, IterableDataset
 
 from simpar.train.curriculum import CurriculumPromptLoader
-
-logger = logging.getLogger(__name__)
 
 
 class CurriculumIterableDataset(IterableDataset):
