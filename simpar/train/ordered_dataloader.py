@@ -46,7 +46,9 @@ class CurriculumPromptLoader:
         if self.difficulty_to_prompts_idx[self.current_difficulty] >= len(
             self.difficulty_to_prompts[self.current_difficulty]
         ):
-            logger.warning(f"difficulty {self.current_difficulty} has no more prompts, reset to 0")
+            logger.warning(f"difficulty {self.current_difficulty} has no more prompts, increase")
+            assert self.difficulty_range
+            self.current_difficulty = min(self.current_difficulty + 1, self.difficulty_range[1])
             self.difficulty_to_prompts_idx[self.current_difficulty] = self.accelerator.process_index
         prompt = self.difficulty_to_prompts[self.current_difficulty][
             self.difficulty_to_prompts_idx[self.current_difficulty]
