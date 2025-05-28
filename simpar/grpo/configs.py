@@ -51,6 +51,28 @@ class GRPOConfig(trl.GRPOConfig):
     prompt_path: str = field(default="", metadata={"help": "The path to the prompt."})
     vqa_model_name: str = field(default="llava-hf/llava-1.5-7b-hf", metadata={"help": "the pretrained model to use"})
 
+    # VQA Scorer配置
+    vqa_scorer_type: str = field(
+        default="local",
+        metadata={
+            "help": "VQA scorer type: 'local' for local model inference, 'openai' for OpenAI-compatible API",
+            "choices": ["local", "openai"],
+        },
+    )
+    vqa_api_base_url: str = field(
+        default="http://localhost:8000/v1",
+        metadata={"help": "Base URL for OpenAI-compatible API when using 'openai' scorer type"},
+    )
+    vqa_api_key: str = field(
+        default="dummy-key", metadata={"help": "API key for OpenAI-compatible API when using 'openai' scorer type"}
+    )
+    vqa_api_model_name: str = field(
+        default="llava-v1.5-7b-hf", metadata={"help": "Model name to use with OpenAI-compatible API"}
+    )
+    vqa_api_timeout: int = field(
+        default=30, metadata={"help": "Timeout in seconds for API requests when using 'openai' scorer type"}
+    )
+
 
 @dataclass
 class CurriculumConfig:

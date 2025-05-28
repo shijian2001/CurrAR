@@ -14,6 +14,7 @@ classifiers = [
 ]
 dependencies = [
     "diffusers==0.33.1",
+    "openai>=1.82.0",
     "peft>=0.15.2",
 ]
 
@@ -69,6 +70,7 @@ train = [
     "transformers@git+https://github.com/huggingface/transformers.git@7bbc62474391aff64f63fcc064c975752d1fa4de",
     "trl==0.17.0",
     "vllm>=0.2.0",
+    "openai>=1.82.0",
 ]
 
 [tool.setuptools.packages.find]

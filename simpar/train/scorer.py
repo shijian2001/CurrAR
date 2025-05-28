@@ -1,8 +1,11 @@
+import base64
+import io
 import re
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 import torch
+from openai import OpenAI
 from torchvision.transforms import ToPILImage
 from transformers import Pipeline
 
@@ -75,5 +78,113 @@ class VQAScorer:
                 # print(generated_answer)
                 scores[img_idx] += (1 / qa_len) if is_answer_match(generated_answer, answer) else 0
             # print(scores)
+
+        return np.array(scores), None  # type: ignore
+
+
+class OpenAIVQAScorer:
+    """
+    OpenAI兼容API的VQA评分器，使用OpenAI SDK进行推理
+    """
+
+    def __init__(
+        self,
+        api_base_url: str = "http://localhost:8000/v1",
+        api_key: str = "dummy-key",
+        model_name: str = "llava-v1.5-7b-hf",
+        template: str = default_qa_template,
+        timeout: int = 30,
+    ) -> None:
+        """
+        初始化OpenAI兼容的VQA评分器
+
+        Args:
+            api_base_url: API基础URL
+            api_key: API密钥
+            model_name: 模型名称
+            template: 问答模板
+            timeout: 请求超时时间（秒）
+        """
+        self.model_name = model_name
+        self.template = template
+        self.to_pil = ToPILImage()
+
+        # 初始化OpenAI客户端
+        self.client = OpenAI(api_key=api_key, base_url=api_base_url, timeout=timeout)
+
+    def _image_to_base64(self, image: torch.Tensor) -> str:
+        """将torch tensor图像转换为base64编码字符串"""
+        if isinstance(image, torch.Tensor):
+            pil_image = self.to_pil(image.to(torch.float))
+        else:
+            pil_image = image
+
+        # 将PIL图像转换为base64
+        buffer = io.BytesIO()
+        pil_image.save(buffer, format="PNG")
+        img_bytes = buffer.getvalue()
+        img_base64 = base64.b64encode(img_bytes).decode("utf-8")
+        return f"data:image/png;base64,{img_base64}"
+
+    def _make_api_request(self, messages: list[dict], max_tokens: int = 512) -> str:
+        """使用OpenAI SDK发送API请求并返回生成的文本"""
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=0.0,  # 确保结果一致性
+            )
+
+            return response.choices[0].message.content.strip()
+
+        except Exception as e:
+            print(f"API请求失败: {e}")
+            return ""
+
+    def calc_score(self, vqa_pipeline: Pipeline, images: torch.Tensor, prompts: tuple[str], metadata: tuple[Any]):
+        """
+        计算VQA分数，与VQAScorer保持相同的接口
+        注意：vqa_pipeline参数在这里不会被使用，但保持接口一致性
+        """
+        batch_size = len(images)
+        scores = [0.0] * len(images)
+
+        # 收集所有VQA样本
+        vqa_samples = []
+        for i, image in enumerate(images):
+            all_qa: list[dict[str, str]] = metadata[i]["qa"]["relation"] + metadata[i]["qa"]["attribute"]
+
+            # 转换图像为base64
+            image_base64 = self._image_to_base64(image)
+
+            for each_qa in all_qa:
+                # 构造OpenAI格式的消息
+                messages = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image_url", "image_url": {"url": image_base64}},
+                            {"type": "text", "text": self.template.format(question=each_qa["question"])},
+                        ],
+                    }
+                ]
+
+                vqa_samples.append(
+                    (
+                        messages,
+                        each_qa["answer"],
+                        len(all_qa),
+                        i,
+                    )
+                )
+
+        # 批量处理API请求
+        for messages, answer, qa_len, img_idx in vqa_samples:
+            generated_answer = self._make_api_request(messages)
+
+            # 计算分数
+            if is_answer_match(generated_answer, answer):
+                scores[img_idx] += 1 / qa_len
 
         return np.array(scores), None  # type: ignore

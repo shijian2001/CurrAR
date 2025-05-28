@@ -37,7 +37,7 @@ from simpar.model.tokenizer.cosmos_tokenizer.networks import TokenizerConfigs
 from simpar.model.tokenizer.cosmos_tokenizer.video_lib import CausalVideoTokenizer as CosmosTokenizer
 from simpar.train.curriculum import Curriculum
 from simpar.train.curriculum_dataloader import CurriculumDataLoader
-from simpar.train.scorer import VQAScorer
+from simpar.train.scorer import OpenAIVQAScorer, VQAScorer
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,7 @@ class LLaVAGRPOTrainer(GRPOTrainer):
         curriculum: Curriculum,
         vqa_model_name: str,
         data_loader: CurriculumDataLoader,
+        scorer_type: str = "local",
         *args,
         **kwargs,
     ):
@@ -67,14 +68,20 @@ class LLaVAGRPOTrainer(GRPOTrainer):
         # 初始化其他参数
         self.curriculum = curriculum
         self.last_difficulty = 0
-        self.vqa_pipeline = pipeline(
-            "image-text-to-text",
-            model=vqa_model_name,
-            torch_dtype=torch.bfloat16,
-            batch_size=self.args.per_device_train_batch_size,
-        )
+        self.scorer_type = scorer_type
 
-        self.vqa_pipeline.model.eval()
+        # 只有在使用本地模型时才初始化vqa_pipeline
+        if scorer_type == "local":
+            self.vqa_pipeline = pipeline(
+                "image-text-to-text",
+                model=vqa_model_name,
+                torch_dtype=torch.bfloat16,
+                batch_size=self.args.per_device_train_batch_size,
+            )
+            self.vqa_pipeline.model.eval()
+        else:
+            # 对于API模式，不需要本地pipeline
+            self.vqa_pipeline = None
 
     def _decode_images(self, completion_ids):
         device = self.accelerator.device
@@ -413,8 +420,18 @@ def main(
     # Load the dataset using CurriculumDataLoader
     data_loader = CurriculumDataLoader(prompt_path=training_args.prompt_path)
 
-    # Get reward functions
-    scorer_ = VQAScorer()
+    # Get reward functions - 根据配置选择不同的scorer类型
+    if training_args.vqa_scorer_type == "openai":
+        logger.info(f"使用OpenAI兼容API scorer: {training_args.vqa_api_base_url}")
+        scorer_ = OpenAIVQAScorer(
+            api_base_url=training_args.vqa_api_base_url,
+            api_key=training_args.vqa_api_key,
+            model_name=training_args.vqa_api_model_name,
+            timeout=training_args.vqa_api_timeout,
+        )
+    else:
+        logger.info(f"使用本地VQA模型: {training_args.vqa_model_name}")
+        scorer_ = VQAScorer()
 
     REWARD_FUNCS_REGISTRY = {
         "vqa": scorer_.calc_score,
@@ -455,6 +472,7 @@ def main(
         peft_config=get_peft_config(model_args),
         callbacks=get_callbacks(training_args, model_args),
         processing_class=tokenizer,
+        scorer_type=training_args.vqa_scorer_type,
     )
     trainer.vq_model = vq_model
 
