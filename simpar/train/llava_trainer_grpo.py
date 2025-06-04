@@ -232,7 +232,9 @@ class LLaVAGRPOTrainer(GRPOTrainer):
         for i, (reward_func, reward_processing_class) in enumerate(
             zip(self.reward_funcs, self.reward_processing_classes)
         ):
-            output_reward_func = reward_func(vqa_pipeline=self.vqa_pipeline, images=decoded_images, prompts=prompts)
+            output_reward_func = reward_func(
+                vqa_pipeline=self.vqa_pipeline, images=decoded_images, prompts=prompts, metadata=metadata
+            )
             rewards_per_func[:, i] = torch.tensor(output_reward_func, dtype=torch.float32, device=device)
 
         # Gather the reward per function: this part is crucial, because the rewards are normalized per group and the
