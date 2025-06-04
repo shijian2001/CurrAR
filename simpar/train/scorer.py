@@ -1,6 +1,7 @@
 import base64
 import io
 import re
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import numpy as np
@@ -183,10 +184,18 @@ class OpenAIVQAScorer:
                     )
                 )
 
-        # 批量处理API请求
-        for messages, answer, qa_len, img_idx in vqa_samples:
+        # 定义处理单个样本的函数
+        def process_sample(sample):
+            messages, answer, qa_len, img_idx = sample
             generated_answer = self._make_api_request(messages)
+            return (generated_answer, answer, qa_len, img_idx)
 
+        # 使用线程池并行处理API请求
+        with ThreadPoolExecutor(max_workers=min(32, len(vqa_samples))) as executor:
+            results = list(executor.map(process_sample, vqa_samples))
+
+        # 处理结果并计算分数
+        for generated_answer, answer, qa_len, img_idx in results:
             # 计算分数
             if is_answer_match(generated_answer, answer):
                 scores[img_idx] += 1 / qa_len
