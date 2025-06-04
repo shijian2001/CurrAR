@@ -41,7 +41,9 @@ class VQAScorer:
         vqa_samples = []
 
         for i, image in enumerate(images):
-            all_qa: list[dict[str, str]] = metadata[i]["qa"]["relation"] + metadata[i]["qa"]["attribute"]
+            all_qa: list[dict[str, str]] = (
+                metadata[i]["qa"]["relation"] + metadata[i]["qa"]["attribute"] + metadata[i]["qa"]["obj"]
+            )
             if isinstance(image, torch.Tensor):
                 pil_image = to_pil(image.to(torch.float))
             for each_qa in all_qa:
@@ -153,7 +155,9 @@ class OpenAIVQAScorer:
         # 收集所有VQA样本
         vqa_samples = []
         for i, image in enumerate(images):
-            all_qa: list[dict[str, str]] = metadata[i]["qa"]["relation"] + metadata[i]["qa"]["attribute"]
+            all_qa: list[dict[str, str]] = (
+                metadata[i]["qa"]["relation"] + metadata[i]["qa"]["attribute"] + metadata[i]["qa"]["obj"]
+            )
 
             # 转换图像为base64
             image_base64 = self._image_to_base64(image)
