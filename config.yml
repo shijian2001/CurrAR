@@ -1,0 +1,58 @@
+# Model arguments
+model_name_or_path: /path_to_sft_checkpoint
+torch_dtype: bfloat16
+attn_implementation: sdpa
+
+# Data
+prompt_path: /mnt/ali-sh-1/usr/wangshijian/CurrAR/rft_curriculum_data.json
+
+# Curriculum
+strategy: timestep
+
+# GRPO trainer config
+bf16: true
+use_vllm: true
+vllm_device: auto
+vllm_gpu_memory_utilization: 0.7
+
+# generation config
+temperature: 1.0
+
+do_eval: false
+gradient_accumulation_steps: 7
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+learning_rate: 1.0e-06
+log_completions: false
+log_level: info
+logging_first_step: false
+logging_steps: 1
+logging_strategy: steps
+lr_scheduler_type: cosine_with_min_lr
+lr_scheduler_kwargs:
+  min_lr_rate: 0.1
+max_prompt_length: 512
+max_completion_length: 4096
+max_steps: 447
+num_generations: 4
+num_train_epochs: 1
+output_dir: saves/20250603
+overwrite_output_dir: true
+per_device_train_batch_size: 4
+push_to_hub: false
+report_to:
+  - none
+reward_funcs:
+  - clip
+reward_weights:
+  - 1.0
+save_strategy: "steps"
+save_steps: 100
+seed: 0
+warmup_ratio: 0.1
+
+vqa_scorer_type: openai
+vqa_api_base_url:
+vqa_api_key:
+vqa_api_model_name:
